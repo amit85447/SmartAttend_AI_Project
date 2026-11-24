@@ -1,0 +1,99 @@
+SMARTATTEND AI - PHASE 1: ARCHITECTURE, SCHEMA, FOLDERS, ROADMAP
+================================================================
+
+1. SYSTEM ARCHITECTURE
+----------------------
+  Browser / phone (camera + navigator.geolocation, HTTPS)
+        |
+  Streamlit app (app.py + dashboard/ pages)         <- Module 11
+        |
+  services/   auth | employees | face_service | geo | attendance | retention | audit
+        |                |                         |
+  models/ (PyTorch)      database/ (SQLAlchemy)    reports/ (Excel, CSV, PDF)
+   MTCNN detect          MySQL 8 (SQLite for tests)  analytics/ (Pandas, ML)
+   FaceNet embed                |
+   liveness checks       private photo store (encrypted files, not web-served)
+                                |
+                  Power BI (MySQL connector or scheduled CSV/Excel export)
+
+Verification pipeline for every attendance mark (nothing is skipped):
+  1. Logged-in employee (bcrypt password, session)
+  2. Camera photo captured (+ challenge frame for liveness)
+  3. Face detected (MTCNN) -> exactly one face required
+  4. Liveness checks pass (texture/screen-replay heuristics + head-turn challenge)
+  5. FaceNet embedding compared (cosine similarity) ONLY against the logged-in
+     employee's own enrolled embeddings (1:1 verification) and, as a safety check,
+     against all others (1:N) - a closer match to someone else is rejected
+  6. Browser GPS fix (explicit permission) -> accuracy, freshness, spoof checks,
+     haversine distance <= geofence radius
+  7. Duplicate check (UNIQUE employee+date, plus check-in/check-out state)
+  8. Row saved in MySQL + encrypted photo + location log + audit log
+  Any failed step => rejected, reason shown, rejection logged. No silent bypass.
+
+2. DATABASE SCHEMA (MySQL 8, 3NF) - full DDL in sql/01_schema_mysql.sql
+------------------------------------------------------------------------
+  departments(department_id PK, name UQ)
+  work_locations(location_id PK, name, latitude, longitude, radius_m)       [extra table: geofence]
+  work_schedules(schedule_id PK, name, start_time, end_time, grace_minutes, working_days, location_id FK)
+  employees(employee_id PK, emp_code UQ, full_name, department_id FK, designation, email UQ,
+            phone, schedule_id FK, password_hash, biometric_consent, consent_at, status, joined_on)
+  face_profiles(profile_id PK, employee_id FK, embedding_enc, embedding_dim, model_name, image_path)
+  attendance(attendance_id PK, employee_id FK, att_date, check_in_ts, check_out_ts, status,
+             late_minutes, working_hours, face_conf_in/out, liveness_in/out,
+             verification_status, source; UNIQUE(employee_id, att_date))
+  attendance_photos(photo_id PK, attendance_id FK, kind, file_path, sha256, captured_at)
+  location_logs(log_id PK, employee_id FK, attendance_id FK, logged_at, latitude, longitude,
+                accuracy_m, distance_m, within_geofence, spoof_flags, source, result)
+  holidays(holiday_date PK, name)
+  admin_users(admin_id PK, username UQ, password_hash, role, is_active, failed_attempts, locked_until)
+  audit_logs(log_id PK, ts, actor_type, actor_id, action, entity, entity_id, details)
+
+  Relationships: departments 1-N employees; work_schedules 1-N employees;
+  work_locations 1-N work_schedules; employees 1-N face_profiles / attendance / location_logs;
+  attendance 1-N attendance_photos (one in, one out).
+  Indexes on date, status, department, (employee, time). Foreign keys everywhere.
+
+3. FOLDER STRUCTURE
+-------------------
+  smartattend/
+    app.py                 Streamlit entry (login + navigation)
+    config.py              all settings (env-driven)
+    requirements.txt  README.md
+    database/              tables.py (SQLAlchemy), db.py, seed_synthetic.py
+    models/                face_model.py (MTCNN + FaceNet), liveness.py
+    services/              auth, employees, face_service, geo, attendance, retention, audit, crypto
+    analytics/             cleaning.py, eda.py, ml.py
+    reports/               exporters.py (CSV/Excel/PDF), excel_workbook.py
+    dashboard/             theme.py + one file per Streamlit page
+    utils/                 geo math, time helpers, image helpers
+    dataset/               synthetic CSV/Excel exports
+    employee_photos/       enrolment images (encrypted, private)
+    attendance_photos/     attendance images (encrypted, private)
+    sql/                   schema, views, analytical queries (CTEs, windows)
+    powerbi/               setup guide, DAX, date table, refresh guide
+    excel/                 generated workbook with pivots/XLOOKUP/COUNTIFS
+    tests/                 pytest per module
+
+4. WHAT NEEDS WHAT (honest limits)
+----------------------------------
+  Webcam:     browser camera permission; works on laptop webcam or phone.
+  GPS:        a desktop webcam has no GPS. Real GPS comes from the browser Geolocation API,
+              which needs HTTPS (or localhost) and the user's permission. Phones are accurate
+              (5-30 m); laptops often give Wi-Fi/IP-based fixes (100 m - km). The app reads the
+              reported accuracy and rejects poor fixes. IP location is never treated as GPS.
+  Liveness:   built-in checks are heuristic (not a certified anti-spoofing product). 
+  MySQL:      needs a local MySQL 8 server. Tests here ran on SQLite with the same code.
+  Power BI:   Power BI Desktop (Windows). A .pbix file cannot be authored outside Power BI,
+              so you get step-by-step setup + all DAX measures + data model.
+
+5. ROADMAP (module by module, each tested before the next)
+-----------------------------------------------------------
+  Phase 1  Architecture, schema, folders, roadmap                      (this document)
+  Phase 2  Modules 5 + 1: database layer, employee management, auth, encrypted biometrics, consent
+  Phase 3  Modules 2 + 3: FaceNet recognition, liveness, GPS/geofence
+  Phase 4  Module 4: smart attendance logic (check-in/out, late, hours, auto-absent)
+  Phase 5  Module 6 + synthetic dataset: Pandas cleaning/EDA
+  Phase 6  Module 7: machine learning
+  Phase 7  Modules 8 + 10: Excel workbook, reports (Excel/CSV/PDF)
+  Phase 8  Module 9: Power BI guide + DAX
+  Phase 9  Module 11: Streamlit dashboard + screenshots, README, test docs

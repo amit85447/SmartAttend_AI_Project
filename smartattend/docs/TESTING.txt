@@ -1,0 +1,112 @@
+SMARTATTEND AI - TESTING DOCUMENTATION
+=====================================
+All numbers below were produced by running the code in this project (nothing typed in by hand).
+Run them yourself:  pytest -v   and   python run_analytics.py
+
+TEST ENVIRONMENT USED
+  Python 3.10, CPU only, SQLite database (no MySQL server was available). Real FaceNet weights (VGGFace2),
+  real public face photos (LFW via scikit-learn). Synthetic attendance data (fake, rule-generated).
+
+HOW TO TEST EACH MODULE (run from the project folder, with .venv active)
+  Module 1 Employee management and auth : pytest tests/test_module1_employees_auth.py -v
+  Module 2 Face recognition + liveness  : pytest tests/test_module2_face.py -v        (downloads model + LFW first time)
+  Module 3 GPS and geofence             : pytest tests/test_module3_geo.py -v
+  Module 4 Attendance rules             : pytest tests/test_module4_attendance.py -v
+  Module 5 SQL queries                  : pytest tests/test_module5_sql.py -v
+  Module 6/7 Analytics and ML           : pytest tests/test_module6_7_analytics.py -v
+  Manual UI check                       : streamlit run app.py, log in, open every page in the sidebar
+
+RESULTS (pytest -v)
+test_module1_employees_auth.py::test_register_and_duplicate PASSED
+test_module1_employees_auth.py::test_validation PASSED
+test_module1_employees_auth.py::test_password_hashed_and_login PASSED
+test_module1_employees_auth.py::test_admin_lockout PASSED
+test_module1_employees_auth.py::test_consent_and_delete PASSED
+test_module1_employees_auth.py::test_fk_enforced PASSED
+test_module1_employees_auth.py::test_python_tables_match_mysql_ddl PASSED
+test_module2_face.py::test_enroll_requires_consent PASSED
+test_module2_face.py::test_genuine_accepted_impostor_and_unknown_rejected PASSED
+test_module2_face.py::test_duplicate_face_enrolment_refused PASSED
+test_module2_face.py::test_embeddings_are_encrypted_at_rest PASSED
+test_module2_face.py::test_head_turn_logic PASSED
+test_module2_face.py::test_static_photo_replay_fails_challenge PASSED
+test_module2_face.py::test_passive_liveness_drops_on_simulated_screen_replay PASSED
+test_module2_face.py::test_real_head_turn_between_two_real_photos_passes PASSED
+test_module3_geo.py::test_haversine_known_distance PASSED
+test_module3_geo.py::test_inside_and_outside PASSED
+test_module3_geo.py::test_rejects_bad_sources_and_quality PASSED
+test_module3_geo.py::test_impossible_jump_and_repeated_fix PASSED
+test_module3_geo.py::test_verify_location_writes_log PASSED
+test_module4_attendance.py::test_on_time_late_and_hours PASSED
+test_module4_attendance.py::test_late_minutes PASSED
+test_module4_attendance.py::test_duplicates_blocked PASSED
+test_module4_attendance.py::test_checkout_without_checkin PASSED
+test_module4_attendance.py::test_face_failure_saves_nothing PASSED
+test_module4_attendance.py::test_location_failures_never_bypassed PASSED
+test_module4_attendance.py::test_holiday_weekend_consent PASSED
+test_module4_attendance.py::test_auto_absent PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q1-q0] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q2-q1] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q3-q2] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q4-q3] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q5-q4] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q6-q5] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q7-q6] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q8-q7] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q9-q8] PASSED
+test_module5_sql.py::test_query_runs_and_returns_rows[Q10-q9] PASSED
+test_module5_sql.py::test_q1_matches_pandas PASSED
+test_module6_7_analytics.py::test_cleaning_removes_exactly_the_injected_problems PASSED
+test_module6_7_analytics.py::test_eda_numbers_are_consistent PASSED
+test_module6_7_analytics.py::test_features_use_only_the_past PASSED
+test_module6_7_analytics.py::test_ml_pipeline_runs_and_time_split PASSED
+============================= 43 passed in 26.43s ==============================
+
+FACE RECOGNITION MEASUREMENT (LFW public photos, 62 people with 40+ photos, 3 enrolment photos each)
+  genuine comparisons 409, impostor comparisons 1710 (cosine similarity, FaceNet VGGFace2 + MTCNN)
+  threshold 0.50: genuine accepted 99.5%, impostors accepted 0.58%
+  threshold 0.60: genuine accepted 98.5%, impostors accepted 0.00%   <- default in config.py
+  threshold 0.70: genuine accepted 90.5%, impostors accepted 0.00%
+  threshold 0.80: genuine accepted 64.5%, impostors accepted 0.00%
+  CAUTION: these are celebrity news photos, not webcam selfies. Measure on your own staff and tune FACE_MATCH_THRESHOLD.
+
+LIVENESS
+  Head-turn logic tested on real photo pairs (correct direction passes, wrong direction fails) and a static photo shown twice is rejected.
+  A simulated screen-replay (blur + moire) lowers the passive texture score.
+  Passive texture check passed only 68% of tiny, upscaled LFW crops, so low-resolution images are scored harshly. Calibrate
+  LIVENESS_THRESHOLD on your own webcam images. This is NOT certified anti-spoofing and was NOT tested against real printed photos or phone replays.
+
+ATTENDANCE RULES
+  Tested with face verification replaced by a stub so late minutes, hours, duplicates, holidays, weekends, consent, auto-absent and
+  "failed GPS or face saves nothing" are exact. The real face path is tested separately in Module 2 tests.
+
+ML RESULTS ON THE SYNTHETIC DEMO DATA (time-based split, split date 2026-10-05), from dataset/ml_results.json
+  Late arrival (test rows 2497, late rate 0.175):
+    LogisticRegression   acc 0.7473  prec 0.37  rec 0.6316  f1 0.4666  auc 0.7742
+    DecisionTree         acc 0.7173  prec 0.3427  rec 0.6705  f1 0.4536  auc 0.7545
+    RandomForest         acc 0.7569  prec 0.3796  rec 0.6133  f1 0.4689  auc 0.7701
+    baseline repeat-yesterday: {'accuracy': 0.7561, 'f1': 0.2827}
+  Absenteeism (test rows 2704, absent rate 0.0766):
+    LogisticRegression   acc 0.8099  prec 0.2142  rec 0.5556  f1 0.3091  auc 0.7412
+    DecisionTree         acc 0.8003  prec 0.2074  rec 0.57  f1 0.3041  auc 0.7275
+    RandomForest         acc 0.902  prec 0.3782  rec 0.4348  f1 0.4045  auc 0.7453
+    baseline repeat-yesterday: {'accuracy': 0.9112, 'f1': 0.4089}
+  Next-month pattern classification: random forest accuracy 0.5732 vs baseline "same as this month" 0.5032
+  Anomaly detection: 100 of 9921 records flagged; 0.99 of them arrive over 45 min later than that person's usual (a proxy check, there is no true label)
+  Forecast (14 working days ahead): {'horizon_working_days': 14, 'test_days': 24, 'MAE_random_forest': 3.188, 'MAE_ridge': 3.307, 'MAE_baseline_train_mean': 3.505, 'MAE_baseline_naive_lag': 3.319}
+
+HOW TO READ THESE HONESTLY
+  The demo data is fake and generated by simple rules, so these scores only prove the pipeline is correct and leakage-free
+  (a test changes future rows and confirms past features do not change). Where a model does not beat the simple baseline, the
+  report says so. Do not present synthetic-data scores as real-world performance.
+
+CLEANING CHECK
+  A messy copy of the data is built with known injected problems; the cleaner removes/flags exactly those counts (asserted in tests).
+
+EXCEL
+  The workbook is generated from database data. Formulas were recalculated in LibreOffice and the COUNTIFS/SUMIFS/AVERAGEIFS results
+  were checked. XLOOKUP could not be evaluated there (older LibreOffice), so open the file in Excel 2021 / Microsoft 365 to confirm
+  the name/department columns fill. Native PivotTables cannot be created by the library; Pivot_Guide sheet gives the steps.
+
+NOT TESTED (needs your hardware)
+  Real webcam capture on Windows, real phone GPS, HTTPS hosting, a MySQL server, Power BI Desktop, Excel desktop.

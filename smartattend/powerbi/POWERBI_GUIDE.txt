@@ -1,0 +1,134 @@
+SMARTATTEND AI - POWER BI GUIDE (Module 9)
+==========================================
+HONEST NOTE: a Power BI dashboard file (.pbix) can only be created inside Power BI Desktop (Windows).
+It could not be built or tested in the environment that produced this project. This guide gives you
+every step, the exact data model, all DAX measures and the visual layout, so you can build it in
+about 45 minutes. The data is the real application data (MySQL views or the exported CSV files).
+
+A. CONNECT TO DATA (pick ONE)
+-----------------------------
+Option 1: MySQL (live data)
+  1. Install "MySQL Connector/NET" (Power BI needs it): search "MySQL Connector NET download", pick the Windows MSI.
+  2. Run sql/02_views_for_powerbi.sql once in MySQL (creates 4 views).
+  3. Power BI Desktop > Home > Get data > MySQL database. Server: localhost  Database: smartattend.
+  4. Tick: vw_attendance_fact, vw_employees, vw_locations, vw_holidays. Click Load (Import mode).
+Option 2: CSV (no MySQL needed, good for the demo data)
+  1. In the project folder run:  python run_analytics.py
+  2. Power BI > Get data > Text/CSV > dataset/attendance_clean.csv > Load.
+  3. Column names differ slightly: use emp_code, full_name, department, att_date, status, late_minutes,
+     working_hours, checkin_hour_float. Add three columns in Power Query or as DAX columns:
+        is_present = IF([status] IN {"present","late"},1,0)   is_late = IF([status]="late",1,0)   is_absent = IF([status]="absent",1,0)
+  (The measures below use the MySQL view column names, e.g. is_present, checkin_hour.)
+
+B. DATE TABLE (Modeling > New table)
+------------------------------------
+DateTable =
+ADDCOLUMNS(
+    CALENDAR(MIN(vw_attendance_fact[att_date]), MAX(vw_attendance_fact[att_date])),
+    "Year", YEAR([Date]),
+    "MonthNo", MONTH([Date]),
+    "Month", FORMAT([Date], "MMM yyyy"),
+    "YearMonth", FORMAT([Date], "yyyy-MM"),
+    "WeekdayNo", WEEKDAY([Date], 2),
+    "Weekday", FORMAT([Date], "ddd"),
+    "WeekNo", WEEKNUM([Date], 2),
+    "IsWeekend", IF(WEEKDAY([Date], 2) > 5, 1, 0)
+)
+Then: select the table > Table tools > Mark as date table > column Date.
+Sort "Month" by "YearMonth" (Column tools > Sort by column) and "Weekday" by "WeekdayNo".
+
+C. RELATIONSHIPS (Model view; all Many-to-one, single direction)
+----------------------------------------------------------------
+  vw_attendance_fact[att_date]   -> DateTable[Date]
+  vw_attendance_fact[emp_code]   -> vw_employees[emp_code]
+  vw_locations[emp_code]         -> vw_employees[emp_code]
+  vw_holidays[holiday_date]      -> DateTable[Date]
+(Department filters come from vw_employees[department], which flows into the fact table via emp_code.)
+
+D. DAX MEASURES (Modeling > New measure; put them in a table named "_Measures")
+-------------------------------------------------------------------------------
+Total Employees = DISTINCTCOUNT(vw_employees[emp_code])
+
+Scheduled Days = COUNTROWS(vw_attendance_fact)
+
+Present Days = SUM(vw_attendance_fact[is_present])
+
+Absent Days = SUM(vw_attendance_fact[is_absent])
+
+Late Arrivals = SUM(vw_attendance_fact[is_late])
+
+Attendance % = DIVIDE([Present Days], [Scheduled Days], 0)
+
+Late % of Present = DIVIDE([Late Arrivals], [Present Days], 0)
+
+Present Employees (selected day) =
+VAR d = MAX(DateTable[Date])
+RETURN CALCULATE(DISTINCTCOUNT(vw_attendance_fact[emp_code]), vw_attendance_fact[is_present] = 1, DateTable[Date] = d)
+
+Absent Employees (selected day) =
+VAR d = MAX(DateTable[Date])
+RETURN CALCULATE(DISTINCTCOUNT(vw_attendance_fact[emp_code]), vw_attendance_fact[is_absent] = 1, DateTable[Date] = d)
+
+Avg Working Hours = AVERAGE(vw_attendance_fact[working_hours])
+
+Avg Check-in Hour = AVERAGE(vw_attendance_fact[checkin_hour])
+
+Avg Late Minutes (late days) =
+CALCULATE(AVERAGE(vw_attendance_fact[late_minutes]), vw_attendance_fact[is_late] = 1)
+
+Department Attendance Rate =
+CALCULATE([Attendance %], ALLEXCEPT(vw_employees, vw_employees[department]))
+
+Attendance % Prev Month =
+CALCULATE([Attendance %], DATEADD(DateTable[Date], -1, MONTH))
+
+Monthly Attendance Growth (pts) =
+VAR cur = [Attendance %]
+VAR prev = [Attendance % Prev Month]
+RETURN IF(ISBLANK(prev), BLANK(), (cur - prev) * 100)
+
+Attendance % 7-Day Avg =
+AVERAGEX(DATESINPERIOD(DateTable[Date], MAX(DateTable[Date]), -7, DAY), [Attendance %])
+
+Punctuality Rank =
+RANKX(ALL(vw_employees[full_name]), [Late % of Present], , ASC, Dense)
+
+GPS Rejected Attempts =
+CALCULATE(COUNTROWS(vw_locations), vw_locations[result] = "rejected")
+
+E. REPORT PAGES AND VISUALS
+---------------------------
+Slicers on every page (Sync slicers): Date (DateTable[Date], Between), Department (vw_employees[department]), Employee (vw_employees[full_name]).
+
+Page 1 "Overview"
+  KPI cards: Total Employees, Present Employees (selected day), Absent Employees (selected day),
+             Attendance %, Late Arrivals, Avg Working Hours, Monthly Attendance Growth (pts)
+  Line chart: X = DateTable[Date], Y = [Attendance %] and [Attendance % 7-Day Avg]       (daily attendance trend)
+  Clustered column: X = DateTable[Month], Y = [Attendance %]                                (monthly trend)
+  Bar chart: Y = vw_employees[department], X = [Department Attendance Rate]                 (department-wise attendance)
+Page 2 "Punctuality and Absenteeism"
+  Table: full_name, department, [Late % of Present], [Avg Late Minutes (late days)], [Punctuality Rank]; sort by rank
+  Column chart: X = DateTable[Weekday], Y = [Late Arrivals]                                 (late arrival analysis)
+  Column chart: X = DateTable[Weekday], Y = [Absent Days]                                   (absenteeism analysis)
+  Histogram-style column chart: X = vw_attendance_fact[checkin_hour] (Group: bin size 0.25), Y = Count   (check-in time distribution)
+  Matrix heatmap: Rows = DateTable[Weekday], Columns = DateTable[WeekNo], Values = [Absent Days];
+                  Format > Cell elements > Background color > Gradient   (attendance heatmap)
+Page 3 "Locations"
+  Map (or Azure Map): Latitude = vw_locations[latitude], Longitude = vw_locations[longitude],
+                      Legend = vw_locations[result], Size = Count of log_id            (location-wise attendance map)
+  Table: workplace, result, count, average distance_m, average accuracy_m
+  NOTE: Power BI map visuals may need "Allow map visuals" in File > Options > Security.
+
+F. REFRESH CONFIGURATION
+------------------------
+Power BI Desktop: Home > Refresh (manual). To publish: Home > Publish > choose a workspace (free Power BI account works).
+Scheduled refresh in the Power BI service:
+  * MySQL on your own PC or server -> you need an "On-premises data gateway" (personal mode is fine for one person):
+    download "On-premises data gateway (personal mode)", sign in, then in the service open
+    Dataset > Settings > Gateway connection > map to MySQL (server/user/password) > Scheduled refresh > Add time (e.g. 07:00, 13:00, 19:00).
+  * CSV option -> put dataset/ in OneDrive, connect with Get data > Web using the OneDrive link, no gateway needed;
+    schedule  python run_analytics.py  nightly (see README) to rewrite the files.
+Use a read-only MySQL user for Power BI:
+  CREATE USER 'pbi_reader'@'localhost' IDENTIFIED BY 'choose-a-strong-password';
+  GRANT SELECT ON smartattend.vw_attendance_fact TO 'pbi_reader'@'localhost';  (repeat for the other 3 views)
+Never give Power BI access to face_profiles (biometric templates).

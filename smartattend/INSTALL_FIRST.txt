@@ -1,0 +1,31 @@
+SMARTATTEND AI - START HERE (Windows, no experience needed)
+===========================================================
+You downloaded a ZIP file called SmartAttend_AI_Project.zip. It already contains the whole project.
+
+1. Extract the ZIP
+   - Find SmartAttend_AI_Project.zip (usually in your Downloads folder).
+   - Right-click it and choose "Extract All...". Pick the C: drive as the destination (type C:\ in the box) and click Extract.
+   - You now have the folder  C:\smartattend  (if you see C:\SmartAttend_AI_Project\smartattend instead, move the inner
+     "smartattend" folder to C:\ so the path is C:\smartattend).
+   - Open it. You should see app.py, config.py, requirements.txt, README.md and folders like database and services.
+
+2. Install Python (one time)
+   - Open https://www.python.org/downloads/windows/ in your browser and download Python 3.11 (Windows installer 64-bit).
+   - Double-click it. On the FIRST screen, tick the box "Add python.exe to PATH" at the bottom. Then click "Install Now".
+
+3. Open a terminal inside the project folder
+   - In File Explorer open C:\smartattend. Click the address bar at the top, type  cmd  and press Enter.
+   - A black window opens, ending with  C:\smartattend>   That is correct.
+   - Check Python: type  python --version  and press Enter. Success looks like  Python 3.11.9 (any 3.10 to 3.12 is fine).
+
+4. Follow the README
+   - Open README.md in Notepad (right-click > Open with > Notepad).
+   - Start at PART 1, STEP 5: create the environment, then STEP 6: install the libraries
+       python -m venv .venv
+       .venv\Scripts\activate
+       python -m pip install --upgrade pip
+       pip install -r requirements.txt
+       pip install --no-deps facenet-pytorch
+     Then STEP 7:  python setup_demo.py   and STEP 8:  streamlit run app.py
+   - Demo login: admin / Demo#Pass123. The demo data is FAKE.
+   - MySQL setup is in README PART 2. It is optional for the first run.

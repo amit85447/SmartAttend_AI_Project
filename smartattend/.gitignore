@@ -1,0 +1,10 @@
+.env
+.smartattend.key
+*.db
+employee_photos/*
+attendance_photos/*
+!employee_photos/.gitkeep
+!attendance_photos/.gitkeep
+exports/
+__pycache__/
+.venv/
